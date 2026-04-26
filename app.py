@@ -7,6 +7,7 @@ import os
 import uuid
 import streamlit.components.v1 as components
 
+
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Simulador Bioetanol Pro v5", layout="wide")
 
@@ -200,98 +201,89 @@ if 'resultados' in st.session_state:
 
 #DFP en SVG para ver los resultados de forma interactiva
 
-def preparar_datos_interactivos(dm, de):
-    # Función auxiliar para evitar errores de búsqueda
-    def buscar(df, col, id, valor):
-        try:
-            return df[df[col] == id][valor].values[0]
-        except:
-            return 0
+# Diccionario de zonas activas [x, y, ancho, alto]
+EQUIPMENT_ZONES = {
+    "P-110": [155, 10, 50, 50],   # Labeled as P-100 in your SVG
+    "W-210": [340, 120, 65, 65],
+    "W-310": [445, 340, 60, 60],
+    "V-411": [560, 495, 55, 45],
+    "K-410": [720, 385, 85, 215],
+    "W-510": [845, 600, 70, 85],
+    "P-510": [910, 820, 60, 60]   # Nota: Ajusta 'y' si P-510 queda fuera del visor
+}
 
-    return {
-        "P110": {"pot": buscar(de, 'Equipo', 'P110', 'Potencia (kW)')},
-        "W210": {"calor": buscar(de, 'Equipo', 'W210', 'Calor (kW)')},
-        "W310": {"calor": buscar(de, 'Equipo', 'W310', 'Calor (kW)')},
-        "V411": {"pres": buscar(dm, 'Corriente', 'Mezcla_Bifasica', 'Presión (bar)')},
-        "K410": {
-            "temp": buscar(dm, 'Corriente', 'Vapor_caliente', 'Temp (°C)'), # 92.17°C según diseño [cite: 25]
-            "pres": buscar(dm, 'Corriente', 'Vapor_caliente', 'Presión (bar)'), # 1 bar según diseño [cite: 27]
-            "calor": buscar(de, 'Equipo', 'K410', 'Calor (kW)')
-        },
-        "P510": {"pot": buscar(de, 'Equipo', 'P510', 'Potencia (kW)')}
-    }
 
-def renderizar_svg_personalizado(datos):
-    # Cargamos el contenido de tu SVG (debes asegurarte que el archivo esté en la misma carpeta)
-    with open("DFP_eth_sys.svg", "r") as f:
-        svg_content = f.read()
+def generar_svg_interactivo_coords(datos_simulacion):
+    # Cargar el contenido de tu archivo SVG
+    ruta_svg = os.path.join(os.path.dirname(__file__), "DFP_eth_sys.svg")
+    try:
+        with open(ruta_svg, "r", encoding="utf-8") as f:
+            svg_content = f.read()
+    except FileNotFoundError:
+        return "Error: No se encontró el archivo DFP_eth_sys.svg"
 
-    # Definimos los Tooltips dinámicos
-    tooltips_js = f"""
-        const data = {{
-            "P-110": "Bomba Centrífuga<br>Potencia: {datos['P110']['pot']} kW",
-            "W-210": "Intercambiador Coraza y Tubos<br>Carga: {datos['W210']['calor']} kW",
-            "W-310": "Calentador de Mezcla<br>Carga: {datos['W310']['calor']} kW",
-            "V-411": "Válvula de Expansión<br>P. Salida: {datos['V411']['pres']} bar",
-            "K-410": "Tanque Flash<br>Temp: {datos['K410']['temp']} °C<br>P: {datos['K410']['pres']} bar",
-            "P-510": "Bomba de Fondos<br>Potencia: {datos['P510']['pot']} kW"
-        }};
-    """
-
-    return f"""
-    <html>
-    <head>
-        <style>
-            .tooltip {{
-                position: absolute; display: none; padding: 10px;
-                background: rgba(0, 0, 0, 0.85); color: white;
-                border-radius: 4px; font-family: sans-serif; font-size: 12px;
-                z-index: 1000; pointer-events: none;
-            }}
-            /* Estilo para resaltar los equipos al pasar el mouse */
-            svg [id] {{ cursor: pointer; transition: opacity 0.2s; }}
-            svg [id]:hover {{ opacity: 0.7; filter: brightness(1.2); }}
-        </style>
-    </head>
-    <body>
-        <div id="tooltip" class="tooltip"></div>
-        <div id="svg-container">{svg_content}</div>
+    # Generar los rectángulos de interacción (hotspots)
+    hotspots = ""
+    for equipo, coords in EQUIPMENT_ZONES.items():
+        # Mapeo de nombres para extraer datos de la simulación
+        id_bio = equipo.replace("-", "") # Convierte P-110 en P110 para el diccionario
         
-        <script>
-            {tooltips_js}
-            const tooltip = document.getElementById('tooltip');
-            const svg = document.querySelector('svg');
+        # Extraer datos dinámicos (usando los datos de dm y de que ya calculas)
+        info = datos_simulacion.get(id_bio, {})
+        texto_tooltip = f"<b>{equipo}</b><br>"
+        for k, v in info.items():
+            texto_tooltip += f"{k}: {v}<br>"
 
-            // Detectar mouse sobre cualquier elemento con un ID que coincida con nuestra data
-            svg.addEventListener('mouseover', (e) => {{
-                const targetId = e.target.closest('[id]')?.id;
-                if (data[targetId]) {{
-                    tooltip.innerHTML = `<strong>${{targetId}}</strong><br>${{data[targetId]}}`;
-                    tooltip.style.display = 'block';
-                }}
-            }});
+        hotspots += f"""
+        <rect x="{coords[0]}" y="{coords[1]}" width="{coords[2]}" height="{coords[3]}" 
+              fill="red" fill-opacity="0" style="cursor:pointer;"
+              onmouseover="showTooltip(event, '{texto_tooltip}')" 
+              onmouseout="hideTooltip()"/>
+        """
 
-            svg.addEventListener('mousemove', (e) => {{
-                tooltip.style.left = (e.pageX + 15) + 'px';
-                tooltip.style.top = (e.pageY - 15) + 'px';
-            }});
+    #HTML final que envuelve el SVG y añade el JavaScript de los Tooltips
+    html_final = f"""
+    <div id="container" style="position: relative; display: inline-block;">
+        <div id="tooltip" style="position: fixed; display: none; background: rgba(0,0,0,0.85); 
+             color: white; padding: 8px; border-radius: 4px; font-family: sans-serif; 
+             font-size: 12px; z-index: 1000; pointer-events: none; border: 1px solid #555;"></div>
+        {svg_content.replace('</svg>', hotspots + '</svg>')}
+    </div>
 
-            svg.addEventListener('mouseout', () => {{
-                tooltip.style.display = 'none';
-            }});
-        </script>
-    </body>
-    </html>
+    <script>
+        const tip = document.getElementById('tooltip');
+        function showTooltip(e, text) {{
+            tip.innerHTML = text;
+            tip.style.display = 'block';
+            tip.style.left = (e.clientX + 15) + 'px';
+            tip.style.top = (e.clientY - 15) + 'px';
+        }}
+        function hideTooltip() {{
+            tip.style.display = 'none';
+        }}
+    </script>
     """
+    return html_final
+    
 if 'resultados' in st.session_state:
     dm, de, ec, pf = st.session_state['resultados']
-    
+
+    # 1. Organizamos los datos para el diagrama basándonos en tus DataFrames
+    datos_para_pfd = {
+        "P110": {"Potencia": f"{de[de['Equipo']=='P110']['Potencia (kW)'].values[0]} kW"},
+        "W210": {"Calor": f"{de[de['Equipo']=='W210']['Calor (kW)'].values[0]} kW"},
+        "W310": {"Calor": f"{de[de['Equipo']=='W310']['Calor (kW)'].values[0]} kW"},
+        "V411": {"Presión Salida": f"{dm[dm['Corriente']=='Mezcla_Bifasica']['Presión (bar)'].values[0]} bar"},
+        "K410": {
+            "Temp": f"{dm[dm['Corriente']=='Vapor_caliente']['Temp (°C)'].values[0]} °C",
+            "Presión": f"{dm[dm['Corriente']=='Vapor_caliente']['Presión (bar)'].values[0]} bar"
+        },
+        "W510": {"Calor": f"{de[de['Equipo']=='W510']['Calor (kW)'].values[0]} kW"},
+        "P510": {"Potencia": f"{de[de['Equipo']=='P510']['Potencia (kW)'].values[0]} kW"}
+    }
+
+    # 2. Mostramos el diagrama
     st.divider()
-    st.subheader("🗺️ Diagrama de Proceso (SVG Personalizado)")
-    
-    # Procesar los datos de BioSTEAM
-    datos_ui = preparar_datos_interactivos(dm, de)
-    
-    # Generar y renderizar el HTML con el SVG interactivo
-    html_interactivo = renderizar_svg_personalizado(datos_ui)
-    components.html(html_interactivo, height=600, scrolling=True)
+    st.subheader("🗺️ Diagrama de Flujo Interactivo (Basado en Coordenadas)")
+    html_interactivo = generar_svg_interactivo_coords(datos_para_pfd)
+    components.html(html_interactivo, height=800, scrolling=True)
