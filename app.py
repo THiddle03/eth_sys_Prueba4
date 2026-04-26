@@ -200,3 +200,98 @@ if 'resultados' in st.session_state:
 
 #DFP en SVG para ver los resultados de forma interactiva
 
+def preparar_datos_interactivos(dm, de):
+    # Función auxiliar para evitar errores de búsqueda
+    def buscar(df, col, id, valor):
+        try:
+            return df[df[col] == id][valor].values[0]
+        except:
+            return 0
+
+    return {
+        "P110": {"pot": buscar(de, 'Equipo', 'P110', 'Potencia (kW)')},
+        "W210": {"calor": buscar(de, 'Equipo', 'W210', 'Calor (kW)')},
+        "W310": {"calor": buscar(de, 'Equipo', 'W310', 'Calor (kW)')},
+        "V411": {"pres": buscar(dm, 'Corriente', 'Mezcla_Bifasica', 'Presión (bar)')},
+        "K410": {
+            "temp": buscar(dm, 'Corriente', 'Vapor_caliente', 'Temp (°C)'), # 92.17°C según diseño [cite: 25]
+            "pres": buscar(dm, 'Corriente', 'Vapor_caliente', 'Presión (bar)'), # 1 bar según diseño [cite: 27]
+            "calor": buscar(de, 'Equipo', 'K410', 'Calor (kW)')
+        },
+        "P510": {"pot": buscar(de, 'Equipo', 'P510', 'Potencia (kW)')}
+    }
+
+def renderizar_svg_personalizado(datos):
+    # Cargamos el contenido de tu SVG (debes asegurarte que el archivo esté en la misma carpeta)
+    with open("DFP_eth_sys.svg", "r") as f:
+        svg_content = f.read()
+
+    # Definimos los Tooltips dinámicos
+    tooltips_js = f"""
+        const data = {{
+            "P-110": "Bomba Centrífuga<br>Potencia: {datos['P110']['pot']} kW",
+            "W-210": "Intercambiador Coraza y Tubos<br>Carga: {datos['W210']['calor']} kW",
+            "W-310": "Calentador de Mezcla<br>Carga: {datos['W310']['calor']} kW",
+            "V-411": "Válvula de Expansión<br>P. Salida: {datos['V411']['pres']} bar",
+            "K-410": "Tanque Flash<br>Temp: {datos['K410']['temp']} °C<br>P: {datos['K410']['pres']} bar",
+            "P-510": "Bomba de Fondos<br>Potencia: {datos['P510']['pot']} kW"
+        }};
+    """
+
+    return f"""
+    <html>
+    <head>
+        <style>
+            .tooltip {{
+                position: absolute; display: none; padding: 10px;
+                background: rgba(0, 0, 0, 0.85); color: white;
+                border-radius: 4px; font-family: sans-serif; font-size: 12px;
+                z-index: 1000; pointer-events: none;
+            }}
+            /* Estilo para resaltar los equipos al pasar el mouse */
+            svg [id] {{ cursor: pointer; transition: opacity 0.2s; }}
+            svg [id]:hover {{ opacity: 0.7; filter: brightness(1.2); }}
+        </style>
+    </head>
+    <body>
+        <div id="tooltip" class="tooltip"></div>
+        <div id="svg-container">{svg_content}</div>
+        
+        <script>
+            {tooltips_js}
+            const tooltip = document.getElementById('tooltip');
+            const svg = document.querySelector('svg');
+
+            // Detectar mouse sobre cualquier elemento con un ID que coincida con nuestra data
+            svg.addEventListener('mouseover', (e) => {{
+                const targetId = e.target.closest('[id]')?.id;
+                if (data[targetId]) {{
+                    tooltip.innerHTML = `<strong>${{targetId}}</strong><br>${{data[targetId]}}`;
+                    tooltip.style.display = 'block';
+                }}
+            }});
+
+            svg.addEventListener('mousemove', (e) => {{
+                tooltip.style.left = (e.pageX + 15) + 'px';
+                tooltip.style.top = (e.pageY - 15) + 'px';
+            }});
+
+            svg.addEventListener('mouseout', () => {{
+                tooltip.style.display = 'none';
+            }});
+        </script>
+    </body>
+    </html>
+    """
+if 'resultados' in st.session_state:
+    dm, de, ec, pf = st.session_state['resultados']
+    
+    st.divider()
+    st.subheader("🗺️ Diagrama de Proceso (SVG Personalizado)")
+    
+    # Procesar los datos de BioSTEAM
+    datos_ui = preparar_datos_interactivos(dm, de)
+    
+    # Generar y renderizar el HTML con el SVG interactivo
+    html_interactivo = renderizar_svg_personalizado(datos_ui)
+    components.html(html_interactivo, height=600, scrolling=True)
