@@ -67,12 +67,31 @@ def correr_simulacion(flow_water, flow_eth, temp_mosto, T_flash, P_flash,
             })
     
     # --- REPORTE ENERGÍA ---
+  # --- REPORTE ENERGÍA (CORREGIDO) ---
     datos_en = []
     for u in eth_sys.units:
-        calor = sum([hu.duty for hu in u.heat_utilities])/3600 if hasattr(u, "heat_utilities") else 0
+        # 1. Calculamos calor de servicios auxiliares (W310, W510, etc.)
+        calor_util = sum([hu.duty for hu in u.heat_utilities])/3600 if hasattr(u, "heat_utilities") else 0
+        
+        # 2. Caso especial para W210 (HXprocess): extraer carga térmica de proceso
+        if u.ID == "W210" and hasattr(u, 'H'):
+            # El duty en HXprocess se puede obtener por la diferencia de entalpía o el atributo .duty
+            calor_proceso = u.duty / 3600 # Convertir de kJ/h a kW (kJ/s)
+            calor = calor_proceso
+        else:
+            calor = calor_util
+
         potencia = u.power_utility.rate if u.power_utility else 0
-        if abs(calor) > 0.1 or potencia > 0.1:
-            datos_en.append({"Equipo": u.ID, "Calor (kW)": round(calor, 2), "Potencia (kW)": round(potencia, 2)})
+        
+        # Filtro para mostrar solo equipos con consumo/transferencia significativa
+        if abs(calor) > 0.001 or potencia > 0.001:
+            datos_en.append({
+                "Equipo": u.ID, 
+                "Calor (kW)": round(calor, 2), 
+                "Potencia (kW)": round(potencia, 2)
+            })
+    
+    df_en = pd.DataFrame(datos_en)
 
 # --- TEA ROBUSTO (ACTUALIZADO) ---
     class TEA_Robusto(bst.TEA):
@@ -275,17 +294,15 @@ if 'resultados' in st.session_state:
     
     # Extraer valores reales de la simulación actual
     # Se usan valores por defecto del DFP [cite: 9, 23, 32, 48] si la unidad no está en la tabla
+    # Dentro de: if 'resultados' in st.session_state:
     datos_actualizados = {
-        "P110": {"Potencia": f"{de[de['Equipo']=='P110']['Potencia (kW)'].values[0] if 'P110' in de['Equipo'].values else '0.11'} kW"},
-        "W210": {"Carga Térmica": "Recuperación de calor"},
-        "W310": {"Calor": f"{de[de['Equipo']=='W310']['Calor (kW)'].values[0] if 'W310' in de['Equipo'].values else '14.34'} kW"},
-        "V411": {"P. Salida": f"{dm[dm['Corriente']=='Mezcla_Bifasica']['Presión (bar)'].values[0] if 'Mezcla_Bifasica' in dm['Corriente'].values else '1.00'} bar"},
-        "K410": {
-            "Temp": f"{dm[dm['Corriente']=='Vapor_caliente']['Temp (°C)'].values[0] if 'Vapor_caliente' in dm['Corriente'].values else '92.17'} °C",
-            "Presión": f"{dm[dm['Corriente']=='Vapor_caliente']['Presión (bar)'].values[0] if 'Vapor_caliente' in dm['Corriente'].values else '1.00'} bar"
-        },
-        "W510": {"Enfriamiento": f"{de[de['Equipo']=='W510']['Calor (kW)'].values[0] if 'W510' in de['Equipo'].values else '4.94'} kW"},
-        "P510": {"Potencia": f"{de[de['Equipo']=='P510']['Potencia (kW)'].values[0] if 'P510' in de['Equipo'].values else '0.0781'} kW"}
+        "P110": {"Potencia": f"{de[de['Equipo']=='P110']['Potencia (kW)'].values[0] if 'P110' in de['Equipo'].values else '0.0'} kW"},
+        "W210": {"Carga Térmica": f"{de[de['Equipo']=='W210']['Calor (kW)'].values[0] if 'W210' in de['Equipo'].values else 'Recuperación'} kW"},
+        "W310": {"Calor (Vapor)": f"{de[de['Equipo']=='W310']['Calor (kW)'].values[0] if 'W310' in de['Equipo'].values else '0.0'} kW"},
+        "V411": {"Presión": f"{dm[dm['Corriente']=='Mezcla_Bifasica']['Presión (bar)'].values[0] if 'Mezcla_Bifasica' in dm['Corriente'].values else '1.0'} bar"},
+        "K410": {"Separación": "Flash V/L"},
+        "W510": {"Calor (Enf.)": f"{de[de['Equipo']=='W510']['Calor (kW)'].values[0] if 'W510' in de['Equipo'].values else '0.0'} kW"},
+        "P510": {"Potencia": f"{de[de['Equipo']=='P510']['Potencia (kW)'].values[0] if 'P510' in de['Equipo'].values else '0.0'} kW"}
     }
     
     st.divider()
