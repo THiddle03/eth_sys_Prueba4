@@ -271,7 +271,7 @@ if 'resultados' in st.session_state:
     # 1. Organizamos los datos para el diagrama basándonos en tus DataFrames
     datos_para_pfd = {
         "P110": {"Potencia": f"{de[de['Equipo']=='P110']['Potencia (kW)'].values[0]} kW"},
-        "W210": {"Calor": f"{de[de['Equipo']=='W210']['Calor (kW)'].values[0]} kW"},
+        #"W210": {"Calor": f"{de[de['Equipo']=='W210']['Calor (kW)'].values[0]} kW"},
         "W310": {"Calor": f"{de[de['Equipo']=='W310']['Calor (kW)'].values[0]} kW"},
         "V411": {"Presión Salida": f"{dm[dm['Corriente']=='Mezcla_Bifasica']['Presión (bar)'].values[0]} bar"},
         "K410": {
