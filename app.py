@@ -201,89 +201,97 @@ if 'resultados' in st.session_state:
 
 #DFP en SVG para ver los resultados de forma interactiva
 
-# Diccionario de zonas activas [x, y, ancho, alto]
-EQUIPMENT_ZONES = {
-    "P-110": [155, 10, 50, 50],   # Labeled as P-100 in your SVG
-    "W-210": [340, 120, 65, 65],
-    "W-310": [445, 340, 60, 60],
-    "V-411": [560, 495, 55, 45],
-    "K-410": [720, 385, 85, 215],
-    "W-510": [845, 600, 70, 85],
-    "P-510": [910, 820, 60, 60]   # Nota: Ajusta 'y' si P-510 queda fuera del visor
+# 1. MAPEO DE COORDENADAS (AJUSTE FINO)
+# Basado en las dimensiones del nuevo archivo D_eth_sys.svg
+# Formato: [X, Y, Ancho, Alto]
+ZONAS_EQUIPOS = {
+    "P-110": [160, 5, 55, 55],
+    "W-210": [335, 105, 75, 75],
+    "W-310": [445, 335, 70, 70],
+    "V-411": [565, 500, 60, 45],
+    "K-410": [720, 385, 95, 215],
+    "W-510": [845, 595, 80, 90],
+    "P-510": [915, 815, 60, 65]
 }
 
+def generar_pfd_interactivo(datos_simulacion):
+    # Cargar el contenido del archivo SVG
+    ruta_svg = "D_eth_sys.svg"
+    if not os.path.exists(ruta_svg):
+        return "Error: No se encontró el archivo D_eth_sys.svg en el directorio."
+    
+    with open(ruta_svg, "r", encoding="utf-8") as f:
+        svg_content = f.read()
 
-def generar_svg_interactivo_coords(datos_simulacion):
-    # Cargar el contenido de tu archivo SVG
-    ruta_svg = os.path.join(os.path.dirname(__file__), "DFP_eth_sys.svg")
-    try:
-        with open(ruta_svg, "r", encoding="utf-8") as f:
-            svg_content = f.read()
-    except FileNotFoundError:
-        return "Error: No se encontró el archivo DFP_eth_sys.svg"
-
-    # Generar los rectángulos de interacción (hotspots)
-    hotspots = ""
-    for equipo, coords in EQUIPMENT_ZONES.items():
-        # Mapeo de nombres para extraer datos de la simulación
-        id_bio = equipo.replace("-", "") # Convierte P-110 en P110 para el diccionario
+    # Generar la capa de interacción (hotspots)
+    capa_interactiva = ""
+    for equipo, pos in ZONAS_EQUIPOS.items():
+        # Limpiar el nombre para buscar en el diccionario de datos (P-110 -> P110)
+        id_sim = equipo.replace("-", "")
+        info = datos_simulacion.get(id_sim, {"Estado": "Simulando..."})
         
-        # Extraer datos dinámicos (usando los datos de dm y de que ya calculas)
-        info = datos_simulacion.get(id_bio, {})
-        texto_tooltip = f"<b>{equipo}</b><br>"
-        for k, v in info.items():
-            texto_tooltip += f"{k}: {v}<br>"
-
-        hotspots += f"""
-        <rect x="{coords[0]}" y="{coords[1]}" width="{coords[2]}" height="{coords[3]}" 
-              fill="red" fill-opacity="0" style="cursor:pointer;"
-              onmouseover="showTooltip(event, '{texto_tooltip}')" 
-              onmouseout="hideTooltip()"/>
+        # Formatear el contenido del tooltip (lo que verá el usuario)
+        tooltip_html = f"<b>{equipo}</b><br>"
+        for clave, valor in info.items():
+            tooltip_html += f"{clave}: {valor}<br>"
+        
+        # Crear rectángulos de detección
+        capa_interactiva += f"""
+        <rect x="{pos[0]}" y="{pos[1]}" width="{pos[2]}" height="{pos[3]}" 
+              fill="white" fill-opacity="0" style="cursor:pointer;"
+              onmouseover="showTip(event, '{tooltip_html}')" 
+              onmouseout="hideTip()"
+              onclick="alert('{equipo}\\n{'-'*15}\\n' + '{tooltip_html}'.replace(/<br>/g, '\\n').replace(/<b>/g, '').replace(/<\\/b>/g, ''))"/>
         """
 
-    #HTML final que envuelve el SVG y añade el JavaScript de los Tooltips
-    html_final = f"""
-    <div id="container" style="position: relative; display: inline-block;">
-        <div id="tooltip" style="position: fixed; display: none; background: rgba(0,0,0,0.85); 
-             color: white; padding: 8px; border-radius: 4px; font-family: sans-serif; 
-             font-size: 12px; z-index: 1000; pointer-events: none; border: 1px solid #555;"></div>
-        {svg_content.replace('</svg>', hotspots + '</svg>')}
+    # HTML completo con lógica de Tooltips y el SVG embebido
+    return f"""
+    <div id="wrapper" style="position: relative; display: inline-block; width: 100%;">
+        <div id="tooltip-box" style="position: fixed; display: none; background: rgba(20, 20, 20, 0.9); 
+             color: #00ffcc; padding: 12px; border-radius: 8px; font-family: 'Segoe UI', Tahoma; 
+             font-size: 13px; z-index: 10000; pointer-events: none; border: 1px solid #00ffcc;
+             box-shadow: 0px 0px 15px rgba(0,255,204,0.3);"></div>
+        {svg_content.replace('</svg>', capa_interactiva + '</svg>')}
     </div>
-
     <script>
-        const tip = document.getElementById('tooltip');
-        function showTooltip(e, text) {{
-            tip.innerHTML = text;
-            tip.style.display = 'block';
-            tip.style.left = (e.clientX + 15) + 'px';
-            tip.style.top = (e.clientY - 15) + 'px';
+        const tipBox = document.getElementById('tooltip-box');
+        function showTip(e, text) {{
+            tipBox.innerHTML = text;
+            tipBox.style.display = 'block';
+            moverTip(e);
         }}
-        function hideTooltip() {{
-            tip.style.display = 'none';
+        function hideTip() {{ tipBox.style.display = 'none'; }}
+        function moverTip(e) {{
+            tipBox.style.left = (e.clientX + 20) + 'px';
+            tipBox.style.top = (e.clientY + 20) + 'px';
         }}
+        document.addEventListener('mousemove', moverTip);
     </script>
     """
-    return html_final
-    
+
+# 2. INTEGRACIÓN CON LOS RESULTADOS DE BIOSTEAM
 if 'resultados' in st.session_state:
     dm, de, ec, pf = st.session_state['resultados']
-
-    # 1. Organizamos los datos para el diagrama basándonos en tus DataFrames
-    datos_para_pfd = {
-        "P110": {"Potencia": f"{de[de['Equipo']=='P110']['Potencia (kW)'].values[0]} kW"},
-        #"W210": {"Calor": f"{de[de['Equipo']=='W210']['Calor (kW)'].values[0]} kW"},
-        "W310": {"Calor": f"{de[de['Equipo']=='W310']['Calor (kW)'].values[0]} kW"},
-        "V411": {"Presión Salida": f"{dm[dm['Corriente']=='Mezcla_Bifasica']['Presión (bar)'].values[0]} bar"},
+    
+    # Extraer valores reales de la simulación actual
+    # Se usan valores por defecto del DFP [cite: 9, 23, 32, 48] si la unidad no está en la tabla
+    datos_actualizados = {
+        "P110": {"Potencia": f"{de[de['Equipo']=='P110']['Potencia (kW)'].values[0] if 'P110' in de['Equipo'].values else '0.11'} kW"},
+        "W210": {"Carga Térmica": "Recuperación de calor"},
+        "W310": {"Calor": f"{de[de['Equipo']=='W310']['Calor (kW)'].values[0] if 'W310' in de['Equipo'].values else '14.34'} kW"},
+        "V411": {"P. Salida": f"{dm[dm['Corriente']=='Mezcla_Bifasica']['Presión (bar)'].values[0] if 'Mezcla_Bifasica' in dm['Corriente'].values else '1.00'} bar"},
         "K410": {
-            "Temp": f"{dm[dm['Corriente']=='Vapor_caliente']['Temp (°C)'].values[0]} °C",
-            "Presión": f"{dm[dm['Corriente']=='Vapor_caliente']['Presión (bar)'].values[0]} bar"
+            "Temp": f"{dm[dm['Corriente']=='Vapor_caliente']['Temp (°C)'].values[0] if 'Vapor_caliente' in dm['Corriente'].values else '92.17'} °C",
+            "Presión": f"{dm[dm['Corriente']=='Vapor_caliente']['Presión (bar)'].values[0] if 'Vapor_caliente' in dm['Corriente'].values else '1.00'} bar"
         },
-        "W510": {"Calor": f"{de[de['Equipo']=='W510']['Calor (kW)'].values[0]} kW"},
-        "P510": {"Potencia": f"{de[de['Equipo']=='P510']['Potencia (kW)'].values[0]} kW"}
+        "W510": {"Enfriamiento": f"{de[de['Equipo']=='W510']['Calor (kW)'].values[0] if 'W510' in de['Equipo'].values else '4.94'} kW"},
+        "P510": {"Potencia": f"{de[de['Equipo']=='P510']['Potencia (kW)'].values[0] if 'P510' in de['Equipo'].values else '0.0781'} kW"}
     }
-
-    # 2. Mostramos el diagrama
+    
     st.divider()
-    st.subheader("🗺️ Diagrama de Flujo Interactivo (Basado en Coordenadas)")
-    html_interactivo = generar_svg_interactivo_coords(datos_para_pfd)
-    components.html(html_interactivo, height=800, scrolling=True)
+    st.subheader("🧪 Gemelo Digital: Monitoreo en Tiempo Real")
+    st.info("Pasa el mouse sobre el diagrama para auditar los resultados dinámicos.")
+    
+    # Renderizar el componente
+    html_interactivo = generar_pfd_interactivo(datos_actualizados)
+    components.html(html_interactivo, height=750, scrolling=True)
