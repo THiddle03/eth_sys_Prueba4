@@ -1,0 +1,8 @@
+altair>=5.0.0
+streamlit>=1.31.0
+biosteam
+thermosteam
+pandas
+google-generativeai
+Pillow
+graphviz
